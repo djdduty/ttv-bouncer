@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"os"
@@ -50,62 +51,61 @@ func handleConnection(conn net.Conn) {
 	// Close the connection when you're done with it.
 	clientNick := ""
 	quit := false
+	buf := bufio.NewReader(conn)
 	for !quit {
-		buf := make([]byte, 1024)
-		reqLen, err := conn.Read(buf)
+		message, err := buf.ReadString('\n')
 		// Read the incoming connection into the buffer.
 		if err != nil {
 			fmt.Println("Error reading: ", err.Error())
 			quit = true
 		}
 
-		messages := strings.Split(string(buf[:reqLen]), "\r\n")
+		//messages := strings.Split(string(buf[:reqLen]), "\r\n")
+		message = strings.Split(message, "\r")[0]
 		response := ""
 
-		for _, message := range messages {
-			subCommand, data := splitCommand(message, " ")
-			if len(message) == 0 {
-				continue
-			}
-			fmt.Printf("Parsing command message %s\n", message)
+		subCommand, data := splitCommand(message, " ")
+		if len(message) == 0 {
+			continue
+		}
+		fmt.Printf("Parsing command message %s\n", message)
+		switch subCommand {
+		case "CAP":
+			subCommand, _ := splitCommand(data, " ")
 			switch subCommand {
-			case "CAP":
-				subCommand, _ := splitCommand(data, " ")
-				switch subCommand {
-				case "LS":
-					response += ":tmi.twitch.tv CAP * LS :twitch.tv/commands twitch.tv/tags\r\n"
-					//response += ":tmi.twitch.tv 410 tmi.twitch.tv :Invalid CAP command. TMoohI always runs twitch.tv/commands and twitch.tv/tags\r\n"
+			case "LS":
+				response += ":tmi.twitch.tv CAP * LS :twitch.tv/commands twitch.tv/tags\r\n"
+				//response += ":tmi.twitch.tv 410 tmi.twitch.tv :Invalid CAP command. TMoohI always runs twitch.tv/commands and twitch.tv/tags\r\n"
+				break
+			case "END":
+				if len(clientNick) == 0 {
+					response += "SQUIT 127.0.0.1 :No NICK sent\r\n"
+					fmt.Printf("Disconnecting client, didn't send a NICK")
+					quit = true
 					break
-				case "END":
-					if len(clientNick) == 0 {
-						response += "SQUIT 127.0.0.1 :No NICK sent\r\n"
-						fmt.Printf("Disconnecting client, didn't send a NICK")
-						quit = true
-						break
-					}
-					response += fmt.Sprintf(":tmi.twitch.tv 001 %s :Welcome to ttv bouncer!\r\n", clientNick)
-					response += fmt.Sprintf(":tmi.twitch.tv 002 %s :Your host is tmi.twitch.tv\r\n", clientNick)
-					response += fmt.Sprintf(":tmi.twitch.tv 003 %s :This server is rather new\r\n", clientNick)
-					response += fmt.Sprintf(":tmi.twitch.tv 004 %s :-\r\n", clientNick)
-					response += fmt.Sprintf(":tmi.twitch.tv 375 %s :-\r\n", clientNick)
-					response += fmt.Sprintf(":tmi.twitch.tv 372 %s :You are in a maze of twisty passages.\r\n", clientNick)
-					response += fmt.Sprintf(":tmi.twitch.tv 376 %s :>\r\n", clientNick)
-					break
-				default:
-					response += ":tmi.twitch.tv 410 tmi.twitch.tv :Invalid CAP command\r\n"
 				}
-			case "QUIT":
-				response += "SQUIT\r\n"
-				fmt.Printf("Client disconnected %s\n", clientNick)
-				quit = true
+				response += fmt.Sprintf(":tmi.twitch.tv 001 %s :Welcome to ttv bouncer!\r\n", clientNick)
+				response += fmt.Sprintf(":tmi.twitch.tv 002 %s :Your host is tmi.twitch.tv\r\n", clientNick)
+				response += fmt.Sprintf(":tmi.twitch.tv 003 %s :This server is rather new\r\n", clientNick)
+				response += fmt.Sprintf(":tmi.twitch.tv 004 %s :-\r\n", clientNick)
+				response += fmt.Sprintf(":tmi.twitch.tv 375 %s :-\r\n", clientNick)
+				response += fmt.Sprintf(":tmi.twitch.tv 372 %s :You are in a maze of twisty passages.\r\n", clientNick)
+				response += fmt.Sprintf(":tmi.twitch.tv 376 %s :>\r\n", clientNick)
 				break
-			case "NICK":
-				clientNick = data
-				break
-			case "PING":
-				response += fmt.Sprintf(":tmi.twitch.tv PONG :tmi.twitch.tv :%d\r\n", time.Now().Unix())
-				break
+			default:
+				response += ":tmi.twitch.tv 410 tmi.twitch.tv :Invalid CAP command\r\n"
 			}
+		case "QUIT":
+			response += "SQUIT\r\n"
+			fmt.Printf("Client disconnected %s\n", clientNick)
+			quit = true
+			break
+		case "NICK":
+			clientNick = data
+			break
+		case "PING":
+			response += fmt.Sprintf(":tmi.twitch.tv PONG :tmi.twitch.tv :%d\r\n", time.Now().Unix())
+			break
 		}
 
 		// Send a response back to person contacting us.
